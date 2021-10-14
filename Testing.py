@@ -176,7 +176,7 @@ cv2.waitKey(0)
 ''' Task 9: k-means random seeds '''
 img = cv2.imread('images/flowers.png', cv2.IMREAD_COLOR)
 
-num_cluster = 4
+num_cluster = 5
 
 image_k = hw1.random_seed_image(img, num_cluster)
 
