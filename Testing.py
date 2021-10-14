@@ -139,7 +139,7 @@ cv2.imshow('Image', orientation)
 cv2.waitKey(0)
 
 # Other visualization for orientation
-tmp = (magnitude > (np.max(magnitude)/2.)).astype(np.float32)
+tmp = (magnitude > (np.max(magnitude)/8.)).astype(np.float32)
 GA_scaled = (orientation - np.min(orientation))/(np.max(orientation) - np.min(orientation))
 # Color of the angle of the gradient
 GA_cm = np.zeros((orientation.shape[0], orientation.shape[1], 3), dtype=np.float32)
@@ -147,16 +147,11 @@ GA_cm[:,:,0] = GA_scaled*tmp
 GA_cm[:,:,2] = GA_scaled*tmp
 GA_cm[:,:,2] = (1- GA_cm[:,:,2])*tmp
 
+
+cv2.imwrite("imagesOutput/task6_orientation&magnitude.png", (GA_cm * 255.).astype("uint8"))
 cv2.imshow('Image', GA_cm)
 cv2.waitKey(0)
 
-
-sobel = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) + magnitude + orientation*255.
-sobel = hw1.rescale_int(sobel)
-
-cv2.imwrite("imagesOutput/task6.png", sobel)
-cv2.imshow('Image', sobel)
-cv2.waitKey(0)
 
 ''' Task 7: Rotating image'''
 img = cv2.imread('images/yosemite.png', cv2.IMREAD_COLOR)
@@ -175,9 +170,25 @@ thres = 25.
 edge_peaks = hw1.find_peaks_image(img, thres)
 
 cv2.imwrite("imagesOutput/task8.png", edge_peaks)
-
 cv2.imshow('Image', edge_peaks)
 cv2.waitKey(0)
+
+''' Task 9: k-means random seeds '''
+img = cv2.imread('images/flowers.png', cv2.IMREAD_COLOR)
+
+num_cluster = 4
+
+image_k = hw1.random_seed_image(img, num_cluster)
+
+cv2.imwrite("imagesOutput/task9a.png", image_k)
+cv2.imshow('Image', image_k)
+cv2.waitKey(0)
+
+image_k = hw1.pixel_seed_image(img, num_cluster)
+cv2.imwrite("imagesOutput/task9b.png", image_k)
+cv2.imshow('Image', image_k)
+cv2.waitKey(0)
+
 
 ''' Destroy all windows '''
 cv2.destroyAllWindows()

@@ -24,6 +24,8 @@ import numpy as np
 import math
 import scipy.stats as st
 from skimage.exposure import rescale_intensity
+import random
+from scipy.spatial.distance import cdist
 
 """
 Task 1: Convolution
@@ -478,7 +480,7 @@ def rotate_image(image: np.ndarray, rotation_angle: float, in_place: bool = Fals
     if not in_place:
         image = image.copy()
 
-    radians = math.radians(rotation_angle)
+    radians = math.radians(-rotation_angle)
     image_copy = np.zeros_like(image)
     image_height, image_width, *_ = image.shape
     image_height_div2 = image_height / 2.0
@@ -579,8 +581,192 @@ To do: Perform random seeds clustering on "flowers.png" with num_clusters = 4 an
 
 
 def random_seed_image(image: np.ndarray, num_clusters: int, in_place: bool = False) -> np.ndarray:
-    "implement the function here"
-    raise "not implemented yet!"
+    if not in_place:
+        image = image.copy()
+    h, w, d = image.shape
+
+    X = np.reshape(image, (h * w, d))
+    X = np.array(X, dtype=np.int32)
+
+    # Stopping criteria
+    iterations = 100
+    epsilon = 5.0
+
+    centroids = perform_k_means_algorithm(X, num_clusters, iterations, epsilon, random_centroids=True)
+    distance_matrix = get_manhattan_distance(X, centroids)
+    closest_cluster_ids = np.argmin(distance_matrix, axis=1)
+
+    X_reconstructed = centroids[closest_cluster_ids]
+    X_reconstructed = np.array(X_reconstructed, dtype=np.uint8)
+    reduced_image = np.reshape(X_reconstructed, (h, w, d))
+
+    return reduced_image
+
+
+def random_seed_image_opencv(image: np.ndarray, num_clusters: int, in_place: bool = False) -> np.ndarray:
+    '''
+    Implementation using L2 distance instead of L1 distance
+    '''
+    if not in_place:
+        image = image.copy()
+
+    # Define criteria = ( type, max_iter = 100 , epsilon = 0.0 )
+    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 100, 30.0)
+
+    # Set flags
+    flags = cv2.KMEANS_RANDOM_CENTERS
+
+    # Reshape for cv2 function
+    image = (image).astype(np.float32)
+    Z = image.reshape(-1, 3)
+    # Apply KMeans
+    compactness, labels, center = cv2.kmeans(Z, num_clusters, None, criteria, 10, flags)
+
+    centers = np.uint8(center * 255.)
+    res = centers[labels.flatten()]  # Assign the color of each pixel, the color of the closest centroid
+    image_k = res.reshape((image.shape))
+
+    return image_k
+
+
+""" K-means implementation only for images"""
+
+
+# Ref[]: https://github.com/tugot17/K-Means-Algorithm-From-Scratch/blob/master/k-means.py
+def get_initial_centroids(X: np.ndarray, num_clusters: int, random_centroids: bool):
+    """
+        Generate k centroids for RGB images.
+        Values bt 0 and 255.
+        Args:
+            num_clusters: Number of clusters
+    """
+    centroids = np.zeros((num_clusters, 3))
+    if random_centroids:
+        for i in range(num_clusters):
+            centroids[i, 0] = random.randint(0, 255)
+            centroids[i, 1] = random.randint(0, 255)
+            centroids[i, 2] = random.randint(0, 255)
+    else:
+        # Initialize first centroid
+        # Get pixel index
+        idx = random.randint(0, X.shape[0])
+        # Assign the corresponding color value
+        centroids[0, 0] = X[idx, 0]
+        centroids[0, 1] = X[idx, 1]
+        centroids[0, 2] = X[idx, 2]
+        for i in range(num_clusters - 1):
+            dist_L1 = 0
+            while dist_L1 < 175:
+                # Get pixel index
+                idx = random.randint(0, X.shape[0])
+                # Assign the corresponding color value
+                centroids[i + 1, 0] = X[idx, 0]
+                centroids[i + 1, 1] = X[idx, 1]
+                centroids[i + 1, 2] = X[idx, 2]
+                # Check if the centroids are far enough
+                dist_aux = 0
+                for j in range(i+1):
+                    dist_aux = dist_aux + np.sum(np.abs(centroids[i + 1, :] - centroids[j, :]))
+                dist_L1 = dist_aux / (i+1)
+
+    return np.array(centroids)
+
+
+def get_manhattan_distance(A_matrix, B_matrix):
+    """
+        Function computes distance between matrix A and B.
+        E. g. C[2,15] is distance between point 2 from A (A[2]) matrix and point 15 from matrix B (B[15])
+        Args:
+            A_matrix (numpy.ndarray): Matrix size N1:D
+            B_matrix (numpy.ndarray): Matrix size N2:D
+        Returns:
+            numpy.ndarray: Matrix size N1:N2
+        """
+    # Too slow solution. Implementation using scipy library
+    # N1 = A_matrix.shape[0]
+    # N2 = B_matrix.shape[0]
+    # DIST = np.zeros((N1, N2))
+    # for i in range(N1):
+    #     for j in range(N2):
+    #         DIST[i, j] = sum(abs(val1 - val2) for val1, val2 in zip(A_matrix[i, :], B_matrix[j, :]))
+    #
+    # return np.array(DIST)
+
+    # Cityblock == Manhattan == L1 distance
+    return cdist(A_matrix, B_matrix, metric='cityblock')
+
+
+def get_clusters(X, centroids):
+    """
+    Function finds k centroids and assigns each of the N points of array X to one centroid
+    Args:
+        X (numpy.ndarray): array of sample points, size N:D
+        centroids (numpy.ndarray): array of centroids, size K:D
+    Returns:
+        dict {cluster_number: list_of_points_in_cluster}
+    """
+
+    k = centroids.shape[0]
+
+    clusters = {}
+
+    distance_matrix = get_manhattan_distance(X, centroids)
+
+    closest_cluster_ids = np.argmin(distance_matrix, axis=1)
+
+    for i in range(k):
+        clusters[i] = []
+
+    for i, cluster_id in enumerate(closest_cluster_ids):
+        clusters[cluster_id].append(X[i])
+
+    return clusters
+
+
+def stopping_criteria(previous_centroids, new_centroids, num_clusters, epsilon):
+    """
+    Function checks if the sum of the L1 distances between the new cluster centers and the previous cluster centers
+    is less than epsilon*num_clusters
+        previous_centroids (numpy.ndarray): array of k old centroids, size K:D
+        new_centroids (numpy.ndarray): array of k new centroids, size K:D
+    Returns: boolean True if the statement if fulfilled
+    """
+    distances_between_old_and_new_centroids = np.sum(np.sum(np.abs(previous_centroids - new_centroids)))
+    if distances_between_old_and_new_centroids <= epsilon * num_clusters:
+        flag = True
+    else:
+        flag = False
+
+    return flag
+
+
+def perform_k_means_algorithm(X, num_clusters, iterations, epsilon, random_centroids=False):
+    """
+    Function performs k-means algorithm on a given dataset, finds and returns k centroids
+    Args:
+        X (numpy.ndarray) : dataset points array, size N:D
+        num_clusters (int): number of centroids
+        iterations (int): num of iterations
+        epsilon (float): stopping criteria
+    Returns:
+        (numpy.ndarray): array of k centroids, size K:D
+    """
+    new_centroids = get_initial_centroids(X, num_clusters, random_centroids)
+
+    stopping = False
+
+    for iteration in range(iterations):
+        previous_centroids = new_centroids
+        clusters = get_clusters(X, previous_centroids)
+
+        new_centroids = np.array([np.mean(clusters[key], axis=0, dtype=X.dtype) for key in sorted(clusters.keys())])
+
+        stopping = stopping_criteria(previous_centroids, new_centroids, num_clusters, epsilon)
+
+        if stopping:
+            break
+
+    return new_centroids
 
 
 """
@@ -600,10 +786,52 @@ is less than epsilon*num_clusters. Choose epsilon = 30.
 To do: Perform pixel seeds clustering on "flowers.png" with num_clusters = 5 and save as "task9b.png".
 """
 
-
 def pixel_seed_image(image: np.ndarray, num_clusters: int, in_place: bool = False) -> np.ndarray:
-    "implement the function here"
-    raise "not implemented yet!"
+    if not in_place:
+        image = image.copy()
+    h, w, d = image.shape
+
+    X = np.reshape(image, (h * w, d))
+    X = np.array(X, dtype=np.int32)
+
+    # Stopping criteria
+    iterations = 100
+    epsilon = 10.0
+
+    centroids = perform_k_means_algorithm(X, num_clusters, iterations, epsilon, random_centroids=False)
+    distance_matrix = get_manhattan_distance(X, centroids)
+    closest_cluster_ids = np.argmin(distance_matrix, axis=1)
+
+    X_reconstructed = centroids[closest_cluster_ids]
+    X_reconstructed = np.array(X_reconstructed, dtype=np.uint8)
+    reduced_image = np.reshape(X_reconstructed, (h, w, d))
+
+    return reduced_image
+
+def pixel_seed_image_opencv(image: np.ndarray, num_clusters: int, in_place: bool = False) -> np.ndarray:
+    '''
+    Implementation using L2 distance instead of L1 distance
+    '''
+    if not in_place:
+        image = image.copy()
+
+    # Define criteria = ( type, max_iter = 100 , epsilon = 30.0 )
+    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 100, 30.0)
+
+    # Set flags
+    flags = cv2.KMEANS_PP_CENTERS
+
+    # Reshape for cv2 function
+    image = (image).astype(np.float32)
+    Z = image.reshape(-1, 3)
+    # Apply KMeans
+    compactness, labels, center = cv2.kmeans(Z, num_clusters, None, criteria, 10, flags)
+
+    centers = np.uint8(center * 255.)
+    res = centers[labels.flatten()]
+    image_k = res.reshape((image.shape))
+
+    return image_k
 
 
 '''
